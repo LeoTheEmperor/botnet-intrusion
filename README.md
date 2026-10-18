@@ -44,11 +44,18 @@ botnet-intrusion/
 │   ├── afterimage.py           # damped incremental statistics engine (streaming)
 │   ├── extractor.py            # streaming 115-feature extractor (N-BaIoT column order)
 │   ├── validate_extractor.py   # numerical validation of the extractor vs the authors' code
-│   ├── packet_features.py      # scapy packet -> extractor input
+│   ├── packet_features.py      # scapy packet -> extractor input (fallback engine)
+│   ├── fastcapture.py          # dependency-free capture + header parser (~230x faster than scapy)
+│   ├── validate_capture.py     # fast parser vs scapy: equivalence, edge cases, live loopback, speed
+│   ├── dashboard.py            # stdlib web-dashboard server (status page for the live detector)
+│   ├── dashboard_static/
+│   │   └── index.html          # the dashboard page (self-contained, no CDN, works offline)
 │   ├── model_io.py             # export / load a numpy-only forest for the Pi
 │   ├── live_detector.py        # live or pcap-replay: `collect` and `detect` commands
 │   ├── train_live_model.py     # train + export a model from your own captured traffic
 │   └── make_test_pcaps.py      # synthetic traffic for testing without hardware
+├── tests/
+│   └── dashboard_page_test.js  # jsdom test of the dashboard page (needs node)
 ├── scripts/
 │   ├── run_pipeline.sh         # runs the whole offline pipeline
 │   └── fetch_reference.sh      # downloads the authors' reference code (validation only)
@@ -75,10 +82,10 @@ pip install -r requirements.txt
 
 ## Live detection pipeline
 
-Packets -> streaming 115-feature extractor -> scaler -> forest -> label per time window (and a JSON status file for a dashboard or LEDs).
+Packets -> streaming 115-feature extractor -> scaler -> forest -> label per time window, shown on the console, in a **web dashboard**, and optionally in a JSON status file (for LEDs).
 
 ```bash
-pip install -r requirements-live.txt
+pip install -r requirements-live.txt     # numpy only; scapy is optional
 
 # try it without any hardware, using synthetic traffic
 python src/make_test_pcaps.py --out pcaps/train --seed 1
@@ -87,17 +94,32 @@ python src/live_detector.py collect --pcap pcaps/train/mixed.pcap --out data/liv
 python src/train_live_model.py --data data/live --out models/live_model.npz --final
 python src/live_detector.py detect --pcap pcaps/train/mixed.pcap --model models/live_model.npz
 
+# the same with the live web dashboard (open http://localhost:8080); --realtime replays at the recorded speed
+python src/live_detector.py detect --pcap pcaps/train/mixed.pcap --model models/live_model.npz --dashboard 8080 --realtime
+
 # on the Raspberry Pi (needs sudo; use only on a network you own)
 sudo python3 src/live_detector.py collect --iface wlan0 --schedule "benign:120,syn_flood:30,benign:60" --out data/live/s1.csv
-sudo python3 src/live_detector.py detect  --iface wlan0 --model models/live_model.npz
+sudo python3 src/live_detector.py detect  --iface wlan0 --model models/live_model.npz \
+     --dashboard 8080 --dashboard-host 0.0.0.0     # then open http://<pi-address>:8080 from your laptop or phone
 ```
+
+**Dashboard.** One page, no internet needed: a large NORMAL / SUSPICIOUS / ALERT status card, packets per second, a timeline of the last 180 windows coloured by predicted class
+(hover for details), traffic totals per class, and an alert log. It is read-only and unauthenticated, so it binds to `127.0.0.1` unless you pass `--dashboard-host 0.0.0.0`; do that only on a network you own.
+In live mode the detector automatically ignores the dashboard's own HTTP traffic so it does not pollute the classifier's input.
+
+**Packet engines.** The default `fast` engine (`src/fastcapture.py`, standard library only) reads a raw Linux socket or a classic pcap and parses just the needed headers:
+about 5 microseconds per packet, versus about 1,000 for scapy, which would otherwise be the bottleneck before the machine learning is. It handles Ethernet (+ one VLAN tag), IPv4, IPv6 without extension headers,
+TCP, UDP, ICMP and ARP. Use `--engine scapy` for pcapng files, BPF filters or non-Linux live capture.
 
 Record training data as **continuous sessions labelled by time segment** (`--schedule`), not one file per class: the long-window features remember history,
 and cold-start captures taught a model that missed a port scan which followed earlier floods. Synthetic traffic is far easier to separate than real traffic,
 so it only shows that the pipeline works.
 
-To check the extractor numerically against the authors' implementation: `bash scripts/fetch_reference.sh && python src/validate_extractor.py`
-(max relative deviation about 9e-13 over 4,000 packets x 115 features).
+## Tests
+
+- `bash scripts/fetch_reference.sh && python src/validate_extractor.py`: extractor vs the authors' implementation (max relative deviation about 9e-13 over 4,000 packets x 115 features).
+- `python src/validate_capture.py`: fast packet parser vs scapy (identical on 22,198 packets and 10 hand-crafted edge cases), live raw-socket capture on loopback, speed.
+- `node tests/dashboard_page_test.js`: renders the dashboard page in jsdom against a running detector (see the file header for the exact commands).
 
 ## Demo hardware (planned)
 
@@ -111,8 +133,10 @@ to generate SYN floods, UDP floods and port scans.
 - [x] Streaming feature extractor, validated against the reference implementation
 - [x] Live capture / detect pipeline, tested on synthetic traffic
 - [x] Notebook with the full ML code
+- [x] Web dashboard (tested with replayed traffic; not yet on the Pi)
+- [x] Dependency-free fast packet engine
 - [ ] Raspberry Pi setup, extractor benchmark on the board, live demo with real traffic
-- [ ] Web dashboard / LED indicator
+- [ ] LED indicator on the Pi's GPIO header
 - [ ] Final report, slides and demo photos in `docs/`
 
 ## Limitations
@@ -120,6 +144,7 @@ to generate SYN floods, UDP floods and port scans.
 - The model learns one device's traffic (Danmini doorbell); other devices and networks are untested, and a different live device needs its own training data.
 - The balanced 5,000-rows-per-class sample is a design choice; the raw dataset is heavily imbalanced (benign is under 5% of rows).
 - Four Gafgyt classes do not generalise to later portions of the captures (see Results); the explanation is a hypothesis that still needs block cross-validation.
+- The dashboard has no authentication and its page was tested in a simulated DOM, not on real browsers; speeds quoted are from a development machine, and the Pi has not been benchmarked yet.
 - The extractor's stream keying for `HH` / `HpHp` is inferred from the dataset (see `src/extractor.py`), validated for numerics but not against the original N-BaIoT extractor, which is not public.
 
 ## Responsible use

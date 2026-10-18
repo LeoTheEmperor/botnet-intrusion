@@ -1,4 +1,5 @@
-# Live detection on the Raspberry Pi (detect mode needs only these two)
+# Live detection on the Raspberry Pi: the default (fast) engine and the dashboard need only numpy
 numpy>=1.24
-scapy>=2.5
+# Optional: scapy is only needed for pcapng files, live capture on non-Linux systems, BPF filters (--engine scapy)
+# scapy>=2.5
 # train_live_model.py additionally needs: pandas>=2.0

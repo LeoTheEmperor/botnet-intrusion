@@ -16,3 +16,8 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# node (only used by tests/dashboard_page_test.js)
+node_modules/
+package.json
+package-lock.json
