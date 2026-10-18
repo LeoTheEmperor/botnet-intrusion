@@ -1,0 +1,12 @@
+class,auc
+benign,1.0
+gafgyt_combo,0.9999976
+gafgyt_junk,0.9999979999999999
+gafgyt_scan,1.0
+gafgyt_tcp,0.9999995500000001
+gafgyt_udp,0.99999955
+gafgyt_udpplain,1.0
+mirai_ack,1.0
+mirai_scan,1.0
+mirai_syn,0.9994987500000001
+mirai_udp,1.0
