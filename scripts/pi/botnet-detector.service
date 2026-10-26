@@ -1,0 +1,16 @@
+# Live detector + dashboard on the Raspberry Pi. Edit YOUR_USER, then see docs/PI_SETUP.md section 8.
+[Unit]
+Description=IoT botnet intrusion detector (live, with web dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/botnet-intrusion
+ExecStart=/usr/bin/python3 src/live_detector.py detect --iface wlan0 --model models/live_model.npz --dashboard 8080 --dashboard-host 0.0.0.0
+AmbientCapabilities=CAP_NET_RAW
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

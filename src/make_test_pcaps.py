@@ -58,6 +58,7 @@ def main():
     ap.add_argument("--out", default="pcaps")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--seconds", type=float, default=15.0)
+    ap.add_argument("--segment", type=float, default=6.0, help="seconds per segment of mixed.pcap")
     a = ap.parse_args()
     rng, out = np.random.default_rng(a.seed), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -68,10 +69,10 @@ def main():
     # mixed timeline: benign -> syn flood -> benign -> udp flood -> benign -> port scan -> benign
     seq, t, mixed = ["benign", "syn_flood", "benign", "udp_flood", "benign", "port_scan", "benign"], 1_700_001_000.0, []
     for kind in seq:
-        pk, t = KINDS[kind](t, 6.0, rng)
+        pk, t = KINDS[kind](t, a.segment, rng)
         mixed += pk
     wrpcap(str(out / "mixed.pcap"), mixed)
-    print(f"mixed.pcap: {len(mixed)} packets  timeline: " + " > ".join(seq) + "  (6 s each)")
+    print(f"mixed.pcap: {len(mixed)} packets  timeline: " + " > ".join(seq) + f"  ({a.segment:g} s each)")
 
 
 if __name__ == "__main__":

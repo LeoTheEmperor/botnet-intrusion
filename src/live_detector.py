@@ -19,6 +19,10 @@ Live (or pcap-replay) network-traffic pipeline:  packets -> 115 streaming featur
       # no hardware? replay a recording at its original speed (--speed 4 = four times faster):
       python3 live_detector.py detect --pcap pcaps/test/mixed.pcap --model models/live_model.npz --dashboard 8080 --realtime
 
+      # BEST for real recordings: the traffic generator (traffic_sim.py session ...) sends a tiny marker packet at the
+      # start of every segment and collect labels the rows from those markers - no clock synchronisation needed
+      sudo python3 live_detector.py collect --iface wlan0 --markers benign,syn_flood,udp_flood,port_scan --trim-edges 1 --out data/live/s1.csv
+
 Live capture needs root (sudo). scapy is optional (only for pcapng files, non-Linux live capture, or --engine scapy). Only capture on networks you own or administer.
 """
 import argparse
@@ -110,8 +114,8 @@ def parse_schedule(text):
 
 
 def cmd_collect(args):
-    if not args.label and not args.schedule:
-        sys.exit("collect needs --label (whole capture is one class) or --schedule (time-segmented session)")
+    if not args.label and not args.schedule and not args.markers:
+        sys.exit("collect needs --label (whole capture is one class), --schedule (time-segmented) or --markers")
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     new_file = not out.exists() or not args.append
@@ -120,9 +124,12 @@ def cmd_collect(args):
     if new_file:
         writer.writerow(FEATURE_NAMES + ["label"])
     segs = parse_schedule(args.schedule) if args.schedule else None
-    fx, st, per_label = FeatureExtractor(), {"seen": 0, "rows": 0, "t0": None}, Counter()
+    fx, st, per_label = FeatureExtractor(), {"seen": 0, "rows": 0, "t0": None, "mlabel": None, "mt": None}, Counter()
+    marker_labels = [x.strip() for x in args.markers.split(",")] if args.markers else None
 
     def label_at(ts):
+        if marker_labels is not None:             # label = most recent marker; drop rows just after a marker
+            return None if st["mlabel"] is None or ts - st["mt"] < args.trim_edges else st["mlabel"]
         if segs is None:
             return args.label
         off = ts - st["t0"]
@@ -134,6 +141,11 @@ def cmd_collect(args):
     def handler(rec):
         if rec is None:
             return
+        if marker_labels is not None and rec[7].isdigit():   # marker packet: UDP to port base + label index
+            k = int(rec[7]) - args.marker_port_base
+            if 0 <= k < len(marker_labels):
+                st["mlabel"], st["mt"] = marker_labels[k], rec[0]
+                return                                # markers are control traffic, not training data
         if st["t0"] is None:
             st["t0"] = rec[0]
         st["seen"] += 1
@@ -141,7 +153,7 @@ def cmd_collect(args):
         if st["seen"] > args.warmup:
             lab = label_at(rec[0])
             if lab is not None:
-                writer.writerow([f"{v:.10g}" for v in vec] + [lab])
+                writer.writerow([repr(float(v)) for v in vec] + [lab])
                 st["rows"] += 1
                 per_label[lab] += 1
 
@@ -242,7 +254,9 @@ def main():
     c = sub.choices["collect"]
     c.add_argument("--label", default=None, help="class label for the WHOLE capture")
     c.add_argument("--schedule", default=None, help="time-segmented labels, e.g. 'benign:60,syn_flood:30,benign:60'")
-    c.add_argument("--trim-edges", type=float, default=0.5, help="drop rows within N s of a segment boundary")
+    c.add_argument("--markers", default=None, help="label by in-band markers, comma list in marker order, e.g. benign,syn_flood,udp_flood,port_scan")
+    c.add_argument("--marker-port-base", type=int, default=54300, help="marker for label k is a UDP packet to this port + k")
+    c.add_argument("--trim-edges", type=float, default=0.5, help="drop rows within N s of a segment boundary / marker")
     c.add_argument("--out", required=True)
     c.add_argument("--append", action="store_true")
     d = sub.choices["detect"]

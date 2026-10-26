@@ -27,13 +27,14 @@ CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline
 
 
 class DashboardState:
-    def __init__(self, classes=None, source="", benign_label="benign", window_s=1.0):
+    def __init__(self, classes=None, source="", benign_label="benign", window_s=1.0, unit="packets"):
         self.lock = threading.Lock()
         self.started = time.time()
         self.source = source
         self.classes = list(classes or [])
         self.benign_label = benign_label
         self.window_s = window_s
+        self.unit = unit                  # what one counted item is: 'packets' (live) or 'samples' (dataset replay)
         self.history = deque(maxlen=HISTORY_LEN)
         self.alerts = deque(maxlen=ALERTS_LEN)
         self.totals = Counter()
@@ -44,11 +45,13 @@ class DashboardState:
         self.finished = False
         self._alert_label = None
 
-    def push(self, t, label, share, alert, counts, packets):
+    def push(self, t, label, share, alert, counts, packets, truth=None):
         """Record one time window. An 'alert episode' starts when the alert label changes."""
         with self.lock:
             rec = {"t": round(float(t), 2), "label": label, "share": round(float(share), 4),
                    "alert": bool(alert), "packets": int(packets), "counts": dict(counts)}
+            if truth is not None:             # replay demos know the ground truth of every window
+                rec["truth"] = truth
             self.history.append(rec)
             self.packets += int(packets)
             self.windows += 1
@@ -67,7 +70,7 @@ class DashboardState:
         with self.lock:
             return {"server_time": time.time(), "started": self.started, "source": self.source,
                     "classes": self.classes, "benign_label": self.benign_label,
-                    "window_s": self.window_s, "history_len": HISTORY_LEN,
+                    "window_s": self.window_s, "unit": self.unit, "history_len": HISTORY_LEN,
                     "last_push": self.last_push, "finished": self.finished,
                     "packets": self.packets, "windows": self.windows, "n_alerts": self.n_alerts,
                     "totals": dict(self.totals), "history": list(self.history),

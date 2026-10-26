@@ -11,3 +11,4 @@ cd "$(dirname "$0")/.."
 "$PY" src/visualize.py          # the four dataset figures -> figures/
 "$PY" src/overfitting_sweep.py  # depth / forest-size sweeps -> results/       (~4 min)
 "$PY" src/time_split_eval.py    # time-ordered evaluation -> results/          (~2 min)
+"$PY" src/block_cv_eval.py       # interleaved-block diagnosis -> results/      (~2 min)
