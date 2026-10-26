@@ -22,7 +22,7 @@ FILE_LABELS = {
     "syn.csv": ("mirai", "syn"), "udp_1.csv": ("mirai", "udp"),
     "combo.csv": ("gafgyt", "combo"), "junk.csv": ("gafgyt", "junk"),
     "scan.csv": ("gafgyt", "scan"), "tcp.csv": ("gafgyt", "tcp"),
-    "udp.csv": ("gafgyt", "udp"), "udpplain.csv": ("gafgyt", "udpplain"),
+    "udp.csv": ("gafgyt", "udp"), "udpplain.csv": ("mirai", "udpplain"),
 }
 
 
